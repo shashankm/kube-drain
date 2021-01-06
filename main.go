@@ -33,7 +33,8 @@ func main() {
 	} else {
 		kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
 	}
-	hostsfile := flag.String("hostfile", "/tmp/hostsfile", "absolute path to a text file containing the names of all nodes to be drained. Default: /etc/hostsfile")
+	nodename := flag.String("nodename", "", "Name of the node you want to drain.")
+	nodesfile := flag.String("nodefile", "/tmp/nodesfile", "absolute path to a text file containing the names of all nodes to be drained. Default: /etc/nodesfile")
 	flag.Parse()
 
 	// use the current context in kubeconfig
@@ -48,22 +49,29 @@ func main() {
 		panic(err.Error())
 	}
 
-	file, err := os.Open(*hostsfile)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		node := scanner.Text()
+	if *nodename != "" {
+		node := *nodename
 		log.Printf("Draining %s", node)
 		k8NodeCordon(node, clientset)
 		evictNodePods(node, clientset)
-	}
+	} else {
+		file, err := os.Open(*nodesfile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer file.Close()
 
-	if err := scanner.Err(); err != nil {
-		log.Fatal(err)
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			node := scanner.Text()
+			log.Printf("Draining %s", node)
+			k8NodeCordon(node, clientset)
+			evictNodePods(node, clientset)
+		}
+
+		if err := scanner.Err(); err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 
