@@ -54,6 +54,7 @@ func main() {
 		log.Printf("Draining %s", node)
 		k8NodeCordon(node, clientset)
 		evictNodePods(node, clientset)
+		deleteNode(node, clientset)
 	} else {
 		file, err := os.Open(*nodesfile)
 		if err != nil {
@@ -67,6 +68,7 @@ func main() {
 			log.Printf("Draining %s", node)
 			k8NodeCordon(node, clientset)
 			evictNodePods(node, clientset)
+			deleteNode(node, clientset)
 		}
 
 		if err := scanner.Err(); err != nil {
@@ -116,5 +118,14 @@ func evictNodePods(nodeInstance string, client *kubernetes.Clientset) {
 				log.Fatal(err)
 			}
 		}
+	}
+}
+
+func deleteNode(nodeInstance string, client *kubernetes.Clientset) {
+	err := client.CoreV1().Nodes().Delete(context.TODO(), nodeInstance, metav1.DeleteOptions{})
+	if err != nil {
+		log.Fatal(err)
+	} else {
+		log.Printf("Node %s deleted\n", nodeInstance)
 	}
 }
