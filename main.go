@@ -9,7 +9,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
+	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
@@ -53,6 +55,7 @@ func main() {
 		node := *nodename
 		log.Printf("Draining %s", node)
 		k8NodeCordon(node, clientset)
+		// deleteNodePods(node, clientset)
 		evictNodePods(node, clientset)
 		deleteNode(node, clientset)
 	} else {
@@ -67,6 +70,7 @@ func main() {
 			node := scanner.Text()
 			log.Printf("Draining %s", node)
 			k8NodeCordon(node, clientset)
+			// deleteNodePods(node, clientset)
 			evictNodePods(node, clientset)
 			deleteNode(node, clientset)
 		}
@@ -100,6 +104,27 @@ func k8NodeCordon(nodeInstance string, clientSet *kubernetes.Clientset) {
 	}
 }
 
+// func deleteNodePods(nodeInstance string, client *kubernetes.Clientset) {
+// 	pods, err := client.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{
+// 		FieldSelector: "spec.nodeName=" + nodeInstance,
+// 	})
+
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
+// 	for _, i := range pods.Items {
+// 		if i.Namespace == "kube-system" || i.Namespace == "local-path-storage" {
+// 			continue
+// 		} else {
+// 			fmt.Printf("Deleting pod %s\n", i.Name)
+// 			err := client.CoreV1().Pods(i.Namespace).Delete(context.TODO(), i.Name, metav1.DeleteOptions{})
+// 			if err != nil {
+// 				log.Fatal(err)
+// 			}
+// 		}
+// 	}
+// }
+
 func evictNodePods(nodeInstance string, client *kubernetes.Clientset) {
 	pods, err := client.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{
 		FieldSelector: "spec.nodeName=" + nodeInstance,
@@ -108,16 +133,38 @@ func evictNodePods(nodeInstance string, client *kubernetes.Clientset) {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	for _, i := range pods.Items {
 		if i.Namespace == "kube-system" || i.Namespace == "local-path-storage" {
 			continue
 		} else {
-			fmt.Printf("Deleting pod %s\n", i.Name)
-			err := client.CoreV1().Pods(i.Namespace).Delete(context.TODO(), i.Name, metav1.DeleteOptions{})
-			if err != nil {
-				log.Fatal(err)
+			eviction := &policyv1beta1.Eviction{
+				// TypeMeta: metav1.TypeMeta{
+				// 	APIVersion: policyGroupVersion,
+				// 	Kind:       EvictionKind,
+				// },
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      i.Name,
+					Namespace: i.Namespace,
+				},
+				// DeleteOptions: &metav1.DeleteOptions{
+				// 	GracePeriodSeconds: &gracePeriodSeconds,
+				// },
+			}
+			fmt.Printf("Evicting pod %s\n", i.Name)
+			// err := client.PolicyV1beta1().Evictions(i.Namespace).Evict(context.TODO(), eviction)
+			for {
+				err := client.PolicyV1beta1().Evictions(i.Namespace).Evict(context.TODO(), eviction)
+				if err != nil {
+					log.Printf("pod %s evicted\n", i.Name)
+					break
+				}
+				// log.Println(err)
+				// log.Println("Retrying")
+				time.Sleep(5 * time.Second)
 			}
 		}
+		// log.Printf("pod %s evicted\n", i.Name)
 	}
 }
 

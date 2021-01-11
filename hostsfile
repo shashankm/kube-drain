@@ -1,1 +1,2 @@
-minikube-control-plane
+kind-worker
+kind-worker2
