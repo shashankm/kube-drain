@@ -114,7 +114,7 @@ func getNodes(clientSet *kubernetes.Clientset) {
 		log.Fatalln("Unable to print nodes")
 		panic(err.Error())
 	} else {
-		fmt.Println("\nNodes available on the cluster are:")
+		fmt.Println("\nNodes currently available on the cluster are:")
 		for _, node := range allNodes.Items {
 			fmt.Println(node.GetName())
 		}
