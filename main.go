@@ -6,26 +6,19 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/manifoldco/promptui"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
-	//
-	// Uncomment to load all auth plugins
-	// _ "k8s.io/client-go/plugin/pkg/client/auth"
-	//
-	// Or uncomment to load specific auth plugins
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/azure"
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/openstack"
 )
 
 func main() {
@@ -45,6 +38,11 @@ func main() {
 		panic(err.Error())
 	}
 
+	clientCfg, _ := clientcmd.NewDefaultClientConfigLoadingRules().Load()
+	currentContext := clientCfg.CurrentContext
+
+	fmt.Printf("\n\033[31mCurrent context is %s\033[0m\n", currentContext)
+
 	// create the clientset
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
@@ -53,11 +51,24 @@ func main() {
 
 	if *nodename != "" {
 		node := *nodename
-		log.Printf("Draining %s", node)
-		k8NodeCordon(node, clientset)
-		// deleteNodePods(node, clientset)
-		evictNodePods(node, clientset)
-		deleteNode(node, clientset)
+		fmt.Printf("\nDo you want to drain the node %s?\n", node)
+		drainConfirmation := askForConfirmation()
+		if drainConfirmation == true {
+			fmt.Printf("Draining node %s\n", node)
+			k8NodeCordon(node, clientset)
+			evictNodePods(node, clientset)
+		} else if drainConfirmation == false {
+			fmt.Printf("Aborting")
+			os.Exit(2)
+		}
+		fmt.Printf("\nDo you now want to delete the node %s?\n", node)
+		deleteConfirmation := askForConfirmation()
+		if deleteConfirmation == true {
+			fmt.Printf("Deleting node %s\n", node)
+			deleteNode(node, clientset)
+		} else if deleteConfirmation == false {
+			fmt.Printf("Aborting")
+		}
 	} else {
 		file, err := os.Open(*nodesfile)
 		if err != nil {
@@ -65,20 +76,61 @@ func main() {
 		}
 		defer file.Close()
 
+		fmt.Println("\nAre you sure you want to drain these nodes?")
+		nodeslist, err := ioutil.ReadFile(*nodesfile)
+		if err != nil {
+			fmt.Print(err)
+		}
+		nodesliststr := string(nodeslist)
+		fmt.Println(nodesliststr)
 		scanner := bufio.NewScanner(file)
+		drainConfirmation := askForConfirmation()
+		if drainConfirmation == false {
+			fmt.Println("Aborting")
+			os.Exit(2)
+		}
+		fmt.Println("Do you also want to delete these nodes from the cluster upon draining them?")
+		deleteConfirmation := askForConfirmation()
 		for scanner.Scan() {
 			node := scanner.Text()
 			log.Printf("Draining %s", node)
 			k8NodeCordon(node, clientset)
-			// deleteNodePods(node, clientset)
 			evictNodePods(node, clientset)
-			deleteNode(node, clientset)
+			if deleteConfirmation == true {
+				log.Printf("Deleting %s", node)
+				deleteNode(node, clientset)
+			}
 		}
-
 		if err := scanner.Err(); err != nil {
 			log.Fatal(err)
 		}
 	}
+	getNodes(clientset)
+}
+
+func getNodes(clientSet *kubernetes.Clientset) {
+	allNodes, err := clientSet.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		log.Fatalln("Unable to print nodes")
+		panic(err.Error())
+	} else {
+		fmt.Println("\nNodes available on the cluster are:")
+		for _, node := range allNodes.Items {
+			fmt.Println(node.GetName())
+		}
+	}
+}
+
+func askForConfirmation() bool {
+	prompt := promptui.Select{
+		Label: "Select[Yes/No]",
+		Items: []string{"Yes", "No"},
+	}
+	_, result, err := prompt.Run()
+	if err != nil {
+		log.Fatalf("Prompt failed %v\n", err)
+	}
+	return result == "Yes"
 }
 
 func k8NodeCordon(nodeInstance string, clientSet *kubernetes.Clientset) {
@@ -97,10 +149,10 @@ func k8NodeCordon(nodeInstance string, clientSet *kubernetes.Clientset) {
 
 	_, err := clientSet.CoreV1().Nodes().Patch(context.TODO(), nodeInstance, types.JSONPatchType, payloadBytes, metav1.PatchOptions{})
 	if err != nil {
-		fmt.Printf("Node %s couldn't be cordoned\n", nodeInstance)
+		log.Fatalf("Node %s couldn't be cordoned\n", nodeInstance)
 		panic(err.Error())
 	} else {
-		fmt.Printf("Node %s cordoned\n", nodeInstance)
+		log.Printf("Node %s cordoned\n", nodeInstance)
 	}
 }
 
@@ -139,20 +191,12 @@ func evictNodePods(nodeInstance string, client *kubernetes.Clientset) {
 			continue
 		} else {
 			eviction := &policyv1beta1.Eviction{
-				// TypeMeta: metav1.TypeMeta{
-				// 	APIVersion: policyGroupVersion,
-				// 	Kind:       EvictionKind,
-				// },
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      i.Name,
 					Namespace: i.Namespace,
 				},
-				// DeleteOptions: &metav1.DeleteOptions{
-				// 	GracePeriodSeconds: &gracePeriodSeconds,
-				// },
 			}
-			fmt.Printf("Evicting pod %s\n", i.Name)
-			// err := client.PolicyV1beta1().Evictions(i.Namespace).Evict(context.TODO(), eviction)
+			log.Printf("Evicting pod %s\n", i.Name)
 			for {
 				err := client.PolicyV1beta1().Evictions(i.Namespace).Evict(context.TODO(), eviction)
 				if err != nil {
@@ -164,7 +208,6 @@ func evictNodePods(nodeInstance string, client *kubernetes.Clientset) {
 				time.Sleep(5 * time.Second)
 			}
 		}
-		// log.Printf("pod %s evicted\n", i.Name)
 	}
 }
 
