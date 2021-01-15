@@ -16,30 +16,63 @@ It then deletes the nodes thus scaling down the cluster.
 # Example
   
   ```
-  $ k get po
-+ kubectl get po
-NAME   READY   STATUS    RESTARTS   AGE
-sise   1/1     Running   0          10s
+kubectl get nodes
+NAME                 STATUS   ROLES    AGE     VERSION
+kind-control-plane   Ready    master   2m15s   v1.19.1
+kind-worker          Ready    <none>   103s    v1.19.1
+kind-worker2         Ready    <none>   103s    v1.19.1
+kind-worker3         Ready    <none>   103s    v1.19.1
   ```
   
   ```
-  $ ./kube-drain --nodefile hostsfile
-2021/01/06 21:08:35 Draining minikube-control-plane
-Node minikube-control-plane cordoned
-Deleting pod sise
+kubectl get pods -o wide
+NAME                          READY   STATUS    RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+hello-node-7567d9fdc9-9cfh9   1/1     Running   0          61s   10.244.2.2   kind-worker    <none>           <none>
+hello-node-7567d9fdc9-qxptt   1/1     Running   0          53s   10.244.3.2   kind-worker2   <none>           <none>
   ```
   
   ```
-  $ k get po
-+ kubectl get po
-No resources found in default namespace.
+cat hostsfile
+kind-worker
+kind-worker2
   ```
   
   ```
-  + kubectl get nodes
-NAME                     STATUS                     ROLES    AGE   VERSION
-minikube-control-plane   Ready,SchedulingDisabled   master   16d   v1.19.1
+./kube-drain --nodefile hostsfile
+
+Current context is kind-kind
+
+Are you sure you want to drain these nodes?
+kind-worker
+kind-worker2
+
+✔ Yes
+Do you also want to delete these nodes from the cluster upon draining them?
+✔ Yes
+2021/01/13 19:09:00 Draining kind-worker
+2021/01/13 19:09:00 Node kind-worker cordoned
+2021/01/13 19:09:00 Evicting pod hello-node-7567d9fdc9-9cfh9
+2021/01/13 19:09:05 pod hello-node-7567d9fdc9-9cfh9 evicted
+2021/01/13 19:09:05 Deleting kind-worker
+2021/01/13 19:09:05 Node kind-worker deleted
+2021/01/13 19:09:05 Draining kind-worker2
+2021/01/13 19:09:05 Node kind-worker2 cordoned
+2021/01/13 19:09:05 Evicting pod hello-node-7567d9fdc9-qxptt
+2021/01/13 19:09:05 pod hello-node-7567d9fdc9-qxptt evicted
+2021/01/13 19:09:05 Deleting kind-worker2
+2021/01/13 19:09:05 Node kind-worker2 deleted
+
+Nodes currently available on the cluster are:
+kind-control-plane
+kind-worker3
   ```
+  
+```
+kubectl get pods -o wide
+NAME                          READY   STATUS    RESTARTS   AGE    IP           NODE           NOMINATED NODE   READINESS GATES
+hello-node-7567d9fdc9-cdl2l   1/1     Running   0          55s    10.244.1.3   kind-worker3   <none>           <none>
+hello-node-7567d9fdc9-ntjj5   1/1     Running   0          118s   10.244.1.2   kind-worker3   <none>           <none>
+```
   
   you can also pass a hostname instead of a file:
   
