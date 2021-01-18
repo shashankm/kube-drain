@@ -19,6 +19,16 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
+
+	//
+	// Uncomment to load all auth plugins
+	// _ "k8s.io/client-go/plugin/pkg/client/auth"
+	//
+	// Or uncomment to load specific auth plugins
+	// _ "k8s.io/client-go/plugin/pkg/client/auth/azure"
+	// _ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+	_ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
+	// _ "k8s.io/client-go/plugin/pkg/client/auth/openstack"
 )
 
 func main() {
